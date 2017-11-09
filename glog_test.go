@@ -413,3 +413,58 @@ func BenchmarkHeader(b *testing.B) {
 		logging.putBuffer(buf)
 	}
 }
+
+// Test that setting a verbosity at runtime properly changes the verbosity
+func TestSetVerbosity(t *testing.T) {
+	setFlags()
+	defer logging.swap(logging.newBuffers())
+	logging.verbosity.Set("2")
+	defer logging.verbosity.Set("0")
+
+	V(2).Info("test @ 2 - 1")
+	V(3).Info("test @ 3 - 1")
+
+	SetVerbosity(3)
+
+	V(3).Info("test @ 3 - 2")
+	V(2).Info("test @ 2 - 2")
+	V(4).Info("test @ 4 - 1")
+
+	if !contains(infoLog, "test @ 2 - 1", t) || !contains(infoLog, "test @ 2 - 2", t) || !contains(infoLog, "test @ 3 - 2", t) {
+		t.Errorf("missing messages that should have been there")
+	}
+
+	if contains(infoLog, "test @ 3 - 1", t) || contains(infoLog, "test @ 4 - 1", t) {
+		t.Errorf("messages present that should have been filtered")
+	}
+}
+
+// Test that a given filter works as advertised
+func testVerbosityFilter(filters FilterSet, match bool, t *testing.T) {
+	setFlags()
+	defer logging.swap(logging.newBuffers())
+	defer logging.vmodule.Set("")
+	logging.vmodule.Set("abcd=1")
+
+	SetVerbosityFilter(filters)
+	if V(2) != Verbose(match) {
+		t.Errorf("incorrect match for %#v: got %t, expected %t", filters, V(2), match)
+	}
+}
+
+// Test that setting a vmodule filter dynamically properly sets the filter set
+func TestSetVerbosityFilter(t *testing.T) {
+	testVerbosityFilter(FilterSet{"glog_test": 1}, false, t)
+	testVerbosityFilter(FilterSet{"glog_test": 2}, true, t)
+	testVerbosityFilter(FilterSet{"glog_test": 3}, true, t)
+
+	testVerbosityFilter(FilterSet{"*": 2}, true, t)
+	testVerbosityFilter(FilterSet{"?l*": 2}, true, t)
+	testVerbosityFilter(FilterSet{"????_*": 2}, true, t)
+	testVerbosityFilter(FilterSet{"??[mno]?_*t": 2}, true, t)
+
+	testVerbosityFilter(FilterSet{"*x": 2}, false, t)
+	testVerbosityFilter(FilterSet{"m*": 2}, false, t)
+	testVerbosityFilter(FilterSet{"??_*": 2}, false, t)
+	testVerbosityFilter(FilterSet{"?[abc]?_*t": 2}, false, t)
+}

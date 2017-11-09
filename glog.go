@@ -1178,3 +1178,41 @@ func Exitf(format string, args ...interface{}) {
 	atomic.StoreUint32(&fatalNoStacks, 1)
 	logging.printf(fatalLog, format, args...)
 }
+
+// SetVerbosity dynamically raises or lowers the verbosity of the logging,
+// similarly to setting the -v flag.
+func SetVerbosity(l Level) error {
+	logging.mu.Lock()
+	defer logging.mu.Unlock()
+	logging.setVState(l, logging.vmodule.filter, false)
+	return nil
+}
+
+// FilterSet is a set of verbosity filters, mapping a module name pattern
+// to a desired verbosity level.
+type FilterSet map[string]Level
+
+// SetVerbosityFilter dynamically sets the current logging filter, similarly
+// to setting the -vmodule flag.
+func SetVerbosityFilter(filters FilterSet) error {
+	// transform the filters map to the internal modulePat struct,
+	// which contains extra optimizations around non-wildcard patterns
+
+	newFilters := make([]modulePat, 0, len(filters)) 
+	for pattern, lvl := range filters {
+		if lvl < 0 {
+			return errors.New("negative value for verbosity filter")
+		}
+		if lvl == 0 {
+			continue
+		}
+
+		newFilters = append(newFilters, modulePat{pattern, isLiteral(pattern), lvl})
+	}
+
+	logging.mu.Lock()
+	defer logging.mu.Unlock()
+	logging.setVState(logging.verbosity, newFilters, true)
+
+	return nil
+}
